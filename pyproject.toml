@@ -1,0 +1,16 @@
+[project]
+name = "subtitle-generator"
+version = "0.1.0"
+description = "A subtitle generator using Streamlit, MoviePy, and Whisper"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit",
+    "moviepy",
+    "pillow",
+    "opencv-python",
+    "faster-whisper"
+]
+
+[tool.uv]
+# Optional settings, for example:
+# prefer-binary = true
