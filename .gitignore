@@ -42,3 +42,6 @@ dist/
 models/medium.en/
 models/small.en/
 models/base.en/
+
+
+.streamlit/secrets.toml
