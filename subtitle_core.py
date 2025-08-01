@@ -224,9 +224,9 @@ def render_subtitled_video(
                     y_pos_block_start = height - y_position - total_text_height
                     
                     bg_rect_left = x_pos_block_start - padding
-                    bg_rect_top = y_pos_block_start - padding
                     bg_rect_right = x_pos_block_start + actual_block_width + padding
-                    bg_rect_bottom = y_pos_block_start + total_text_height + padding
+                    bg_rect_top = y_pos_block_start - (0.5*padding)
+                    bg_rect_bottom = y_pos_block_start + total_text_height + (1.5*padding)
 
                     bg_rect_left = max(0, bg_rect_left)
                     bg_rect_top = max(0, bg_rect_top)
@@ -279,6 +279,9 @@ def render_subtitled_video(
                                     (bg_left, bg_top, bg_right, bg_bottom),
                                     fill=active_word_bg_rgba
                                 )
+
+        
+
                             
                             if border_thickness > 0:
                                 for x_offset_outline in range(-border_thickness, border_thickness + 1):

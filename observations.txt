@@ -1,0 +1,12 @@
+If you have more than 8GB ram use download medium.en its the best just a bit slower
+
+- small.en perks 
+- - 4x faster than medium and 
+- - about 80% accurate
+- - 434 MB model
+
+
+- medium.en perks  
+- - about 95% accurate
+- - 1.5 GB model
+- - A bit slower

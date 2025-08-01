@@ -41,6 +41,8 @@ if "selected_model" not in st.session_state:
     st.session_state.selected_model = "tiny.en"
 
 st.markdown("### 🧠 Select Whisper Model")
+st.markdown("Using online or RAM > 6GB, and can wait 3x times more than `small.en`? Use `medium.en`  for 95% subtitles' accuracy. Else choose `small.en` for subtitles' accuracy is about 80% ")
+st.markdown("NOTE: Attaching retrieved subtitles with video will take the most of the time so, i suggest `medium.en` and go make tea while waiting :)")
 cols = st.columns(len(ALL_MODELS))
 for i, (name, _) in enumerate(ALL_MODELS.items()):
     if is_model_downloaded(name):
