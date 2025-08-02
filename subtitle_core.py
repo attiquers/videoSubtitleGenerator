@@ -1,11 +1,28 @@
+# subtitle_core.py
 import numpy as np
-from moviepy import VideoFileClip, VideoClip, CompositeVideoClip
+from moviepy import VideoFileClip, CompositeVideoClip
+from moviepy.video.VideoClip import VideoClip
 from faster_whisper import WhisperModel
 from PIL import ImageFont, ImageDraw, Image
 from proglog import ProgressBarLogger
 import os
 import traceback
 import sys
+
+# Helper function to draw a rounded rectangle
+def draw_rounded_rectangle(draw_context, xy, radius, fill=None, outline=None):
+    x0, y0, x1, y1 = xy
+    max_radius = min((x1 - x0) / 2, (y1 - y0) / 2)
+    radius = min(radius, max_radius)
+    if radius <= 0:
+        draw_context.rectangle(xy, fill=fill, outline=outline)
+        return
+    draw_context.rectangle([(x0 + radius, y0), (x1 - radius, y1)], fill=fill, outline=outline)
+    draw_context.rectangle([(x0, y0 + radius), (x1, y1 - radius)], fill=fill, outline=outline)
+    draw_context.pieslice([(x0, y0), (x0 + 2 * radius, y0 + 2 * radius)], 180, 270, fill=fill, outline=outline)
+    draw_context.pieslice([(x1 - 2 * radius, y0), (x1, y0 + 2 * radius)], 270, 360, fill=fill, outline=outline)
+    draw_context.pieslice([(x0, y1 - 2 * radius), (x0 + 2 * radius, y1)], 90, 180, fill=fill, outline=outline)
+    draw_context.pieslice([(x1 - 2 * radius, y1 - 2 * radius), (x1, y1)], 0, 90, fill=fill, outline=outline)
 
 class StreamlitLogger(ProgressBarLogger):
     def __init__(self, st_bar, log_func):
@@ -25,7 +42,6 @@ class StreamlitLogger(ProgressBarLogger):
             self.st_bar.progress(pct)
 
 def hex_to_rgba(hex_color, alpha_percent):
-    """Converts a hex color string and an alpha percentage to an RGBA tuple."""
     hex_color = hex_color.lstrip('#')
     try:
         r = int(hex_color[0:2], 16)
@@ -55,7 +71,7 @@ def transcribe(audio_path, model_path, log_func):
         transcript = [
             {"start": seg.start, "end": seg.end,
              "words": [{"word": w.word, "start": w.start, "end": w.end}
-                       for w in seg.words]}
+                         for w in seg.words]}
             for seg in segments
         ]
         log_func(f"✓ Transcription complete ({len(transcript)} segments).")
@@ -66,9 +82,6 @@ def transcribe(audio_path, model_path, log_func):
         raise
 
 def get_font_path(log_func, font_name="Arial.ttf"):
-    """
-    Finds and returns the path to a system font, trying common locations.
-    """
     if sys.platform == "win32":
         try:
             return ImageFont.truetype(font_name)
@@ -94,7 +107,6 @@ def get_font_path(log_func, font_name="Arial.ttf"):
         for path in macos_font_paths:
             if os.path.exists(path):
                 return path
-
     log_func(f"ERROR: No suitable font found for the system. Falling back to default.")
     return None
 
@@ -116,12 +128,14 @@ def render_subtitled_video(
     active_word_size_scale=1.0,
     active_word_bg_color="#5096FF",
     active_word_bg_opacity=30,
+    active_word_bg_border_radius=0,
     active_border_color="#FFFF00",
     active_border_opacity=100,
     active_border_thickness=2,
     bg_color="#000000",
     bg_opacity=70,
-    y_position=100,
+    bg_border_radius=0,
+    y_position_percent=80,
     x_offset=0,
     subtitle_area_width_percent=80
 ):
@@ -186,7 +200,6 @@ def render_subtitled_video(
                         line_height_estimate = font_size * 1.2
 
                     for word_data in seg["words"]:
-                        # Apply case change to the word text before any other calculations
                         word_text = apply_case(word_data["word"], word_case)
                         is_active_word = (word_data["start"] <= t <= word_data["end"])
                         
@@ -226,8 +239,11 @@ def render_subtitled_video(
                     total_text_height = len(wrapped_lines_data) * line_height_estimate
                     
                     x_pos_block_start = (width // 2 + x_offset) - (actual_block_width // 2)
-                    y_pos_block_start = height - y_position - total_text_height
                     
+                    # Calculate y_pos_block_start based on percentage
+                    y_pos_pixels = height - int(height * (y_position_percent / 100.0))
+                    y_pos_block_start = y_pos_pixels - (total_text_height // 2)
+
                     bg_rect_left = x_pos_block_start - padding
                     bg_rect_right = x_pos_block_start + actual_block_width + padding
                     bg_rect_top = y_pos_block_start - (0.5*padding)
@@ -237,11 +253,14 @@ def render_subtitled_video(
                     bg_rect_top = max(0, bg_rect_top)
                     bg_rect_right = min(width, bg_rect_right)
                     bg_rect_bottom = min(height, bg_rect_bottom)
-
-                    overlay_draw.rectangle(
-                        (bg_rect_left, bg_rect_top, bg_rect_right, bg_rect_bottom),
-                        fill=background_rgba
-                    )
+                    
+                    if bg_opacity > 0:
+                        draw_rounded_rectangle(
+                            overlay_draw,
+                            (bg_rect_left, bg_rect_top, bg_rect_right, bg_rect_bottom),
+                            bg_border_radius,
+                            fill=background_rgba
+                        )
 
                     current_line_y = y_pos_block_start + padding
                     
@@ -268,20 +287,21 @@ def render_subtitled_video(
                             border_color = active_border_rgba if is_active_word else normal_border_rgba
                             border_thickness = active_border_thickness if is_active_word else normal_border_thickness
 
-                            # Only draw the active word background if opacity is > 0
                             if is_active_word and active_word_bg_opacity > 0:
                                 word_bbox = overlay_draw.textbbox((current_word_x, current_line_y), rendered_word_text, font=word_font)
 
-                                active_word_padding_x = 3
+                                space_width = (overlay_draw.textlength(" ", font=active_font))*0.5
                                 total_bg_height = amy_fixed_height
 
                                 bg_top = current_line_y
-                                bg_bottom = current_line_y + (total_bg_height*1.2)
-                                bg_left = word_bbox[0] - active_word_padding_x
-                                bg_right = word_bbox[2] + active_word_padding_x
-
-                                overlay_draw.rectangle(
+                                bg_bottom = current_line_y + (total_bg_height * 1.2)
+                                bg_left = word_bbox[0] - space_width
+                                bg_right = word_bbox[2] + space_width
+                                
+                                draw_rounded_rectangle(
+                                    overlay_draw,
                                     (bg_left, bg_top, bg_right, bg_bottom),
+                                    active_word_bg_border_radius,
                                     fill=active_word_bg_rgba
                                 )
 
@@ -311,10 +331,11 @@ def render_subtitled_video(
                     img = Image.alpha_composite(img, subtitle_overlay)
                     break
             
-            return np.array(img)
+            # The crucial change: convert the final image back to RGB to remove the alpha channel
+            return np.array(img.convert("RGB"))
 
-        video_clip = VideoClip(make_frame, duration=clip.duration)
-        final_clip = CompositeVideoClip([video_clip]).with_audio(clip.audio)
+        final_video_clip = VideoClip(make_frame, duration=clip.duration)
+        final_clip = final_video_clip.with_audio(clip.audio)
         fps = getattr(clip, "fps", 24)
         logger = StreamlitLogger(st_bar, log_func)
         final_clip.write_videofile(

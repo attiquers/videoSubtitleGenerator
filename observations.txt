@@ -10,3 +10,12 @@ If you have more than 8GB ram use download medium.en its the best just a bit slo
 - - about 95% accurate
 - - 1.5 GB model
 - - A bit slower
+
+
+
+
+
+**Features to be added**
+Add temp files yt and tiktok for user to test their gen quickly before doing on big file
+make preview again both, yt and tiktok
+In general settings add word limiter that shows how many words could be shown altogther at one time on screen
