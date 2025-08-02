@@ -16,9 +16,17 @@ If you have more than 8GB ram use download medium.en its the best just a bit slo
 
 
 **Features to be added**
-Add temp files yt and tiktok for user to test their gen quickly before doing on big file
-make preview again both, yt and tiktok
-In general settings add word limiter that shows how many words could be shown altogther at one time on screen
+Dockerise this so it checks gpu and install on its own the models related to gpu
 
-*RED* selecting recommended style removes the preview of uploaded video
-instead of that shitty preview, for predefined load the image below for selected
+
+If you have got commerical free fonts, or you have made cool style using this send me a photo of it and i will add it in recommendations
+
+
+
+This is an Ai Subtitles Generator that works automatiaclly, it extracts audio from video, transcribe the text and timeline for each word
+Then after applying these styles those words are burnt onto the video frame by frame
+
+
+Now there are a few models here and if you are using this on your PC I would suggest you to go for medium.en its the best one.
+
+Before applying these on long video trim to 3 seconds and see if you like the look of your style or maybe you wanna tweak it a bit

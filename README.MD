@@ -17,6 +17,8 @@ This is a Streamlit application that generates stylized subtitles for a video us
 
 ### Setup and Installation
 
+This application is designed to be run using Docker, which simplifies the setup process and ensures all dependencies are correctly handled. You will need to have **Docker** and **Docker Compose** installed on your system.
+
 #### 1\. Clone the repository
 
 ```bash
@@ -24,48 +26,46 @@ git clone <repository-url>
 cd subtitleGenerator
 ```
 
-#### 2\. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
 -----
 
 ### Usage
 
-#### 1\. Model Setup
+#### 1\. Running with CPU (Recommended for most users) 🐢
 
-The **`tiny.en`** model is included by default. For better accuracy, you need to download a larger model.
-
-  * **Using a Hugging Face Token:**
-    You can add a Hugging Face token to a secrets file for automatic model downloads.
-
-    1.  Create a folder named **`.streamlit`** in your project's root directory.
-    2.  Inside the **`.streamlit`** folder, create a file named **`secrets.toml`**.
-    3.  Add your Hugging Face token to the **`secrets.toml`** file in the following format:
-
-    <!-- end list -->
-
-    ```toml
-    [huggingface]
-    token = "your_huggingface_token_here"
-    ```
-
-    The application will now be able to download larger models (e.g., `base.en`, `small.en`, `medium.en`) directly from Hugging Face when you select them.
-
-  * **Manual Download:**
-    Alternatively, you can manually download a model from the provided drive link and place its files in the **`models`** folder. For example, to use `small.en`, download the model files and place them in **`models/small.en/`**.
-
-#### 2\. Run the application
-
-To start the subtitle generator, run the following command from the project root:
+To build and run the application using your computer's CPU, use the following command. This is the simplest way to get started. The `--build` flag will create the Docker image if it doesn't already exist.
 
 ```bash
-streamlit run app.py
+docker compose up --build --build-arg USE_GPU=false
 ```
 
-The application will open in your web browser.
+Once the application is running, open your web browser and navigate to `http://localhost:8502`.
+
+#### 2\. Running with GPU (For faster performance) 🚀
+
+If you have a compatible NVIDIA GPU, you can build and run the application with GPU support for significantly faster transcription. This requires an extra step.
+
+1.  **Enable GPU in `docker-compose.yml`**: Open the `docker-compose.yml` file and uncomment the `deploy` section to allow the container to access your GPU.
+
+    ```yaml
+    # services:
+    #   subtitle-generator:
+    #     ...
+    #     deploy:
+    #       resources:
+    #         reservations:
+    #           devices:
+    #             - driver: nvidia
+    #               count: all
+    #               capabilities: [gpu]
+    ```
+
+2.  **Run the command**: With the `deploy` section uncommented, run the following command. The `USE_GPU=true` argument tells Docker to install the necessary GPU-compatible libraries.
+
+    ```bash
+    docker compose up --build --build-arg USE_GPU=true
+    ```
+
+Once the application is running, open your web browser and navigate to `http://localhost:8502`.
 
 #### 3\. Workflow
 
