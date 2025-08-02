@@ -19,3 +19,6 @@ If you have more than 8GB ram use download medium.en its the best just a bit slo
 Add temp files yt and tiktok for user to test their gen quickly before doing on big file
 make preview again both, yt and tiktok
 In general settings add word limiter that shows how many words could be shown altogther at one time on screen
+
+*RED* selecting recommended style removes the preview of uploaded video
+instead of that shitty preview, for predefined load the image below for selected

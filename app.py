@@ -57,7 +57,6 @@ for i, (name, _) in enumerate(ALL_MODELS.items()):
             download_model(name)
             st.rerun()
 st.markdown(f"**Current Model:** `{st.session_state.selected_model}`")
-st.markdown("---")
 
 # --------------------- SESSION STATE INITIALIZATION ---------------------
 # Initialize all styling parameters in session state for persistence and programmatic updates
@@ -89,7 +88,8 @@ for key, default in {
     "original_transcript": None,
     "srt_content": "",
     "temp_dirs": [],
-    "generated_video_path": None
+    "generated_video_path": None,
+    "uploaded_video": None, # Add a key for the uploaded video object
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -363,8 +363,15 @@ with preview_cols[1]:
     preview_vertical = generate_preview_image(360, 640, "This is a sample subtitle line meow meow.", 3, **preview_v_params)
     st.image(preview_vertical, use_column_width=True)
 
+
 uploaded = st.file_uploader("Upload MP4 Video", type=["mp4"])
-if uploaded: st.video(uploaded)
+# Store the uploaded video object in session state
+if uploaded:
+    st.session_state.uploaded_video = uploaded
+    st.video(uploaded)
+# Display the video from the session state if it exists
+elif "uploaded_video" in st.session_state and st.session_state.uploaded_video:
+    st.video(st.session_state.uploaded_video)
 
 # --------------------- SESSION INIT ---------------------
 def cleanup_temp_dirs():
@@ -417,7 +424,7 @@ def generate_video(input_path, output_path, transcript, progress, log_area):
         log_area.text_area("Final Logs", "\n".join(logs[-20:]), height=150, disabled=True)
 
 def handle_generation():
-    if not uploaded:
+    if not st.session_state.get("uploaded_video"):
         st.warning("Please upload a video.")
         return
 
@@ -433,7 +440,7 @@ def handle_generation():
     model_path = os.path.join("models", st.session_state.selected_model)
 
     try:
-        with open(in_path, "wb") as f: f.write(uploaded.read())
+        with open(in_path, "wb") as f: f.write(st.session_state.uploaded_video.read())
         st.session_state.original_video_path = in_path
         extract_audio(in_path, audio_path, log_func=lambda m: logs.text_area("Log", m))
         progress.progress(30)
@@ -453,7 +460,7 @@ def handle_generation():
         st.session_state.generated_video_path = None
 
 # --------------------- TRIGGER INITIAL GENERATION ---------------------
-if uploaded and st.button("🎯 Generate Subtitled Video"):
+if st.session_state.get("uploaded_video") and st.button("🎯 Generate Subtitled Video"):
     handle_generation()
 
 # --------------------- SRT EDITOR ---------------------
