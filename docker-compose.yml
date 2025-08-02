@@ -6,12 +6,11 @@ services:
         USE_GPU: "false" 
     ports:
       - "8502:8502"
-    deploy:
-      resources:
-        # IMPORTANT: Remove # from the lines below to enable GPU support (not this one).
-
-        #reservations:
-        #  devices:
-        #    - driver: nvidia
-        #      count: all
-        #      capabilities: [gpu]
+    # IMPORTANT: To enable GPU support, uncomment the lines below.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]

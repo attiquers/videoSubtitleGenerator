@@ -32,17 +32,25 @@ cd subtitleGenerator
 
 #### 1\. Running with CPU (Recommended for most users) 🐢
 
-To build and run the application using your computer's CPU, use the following command. This is the simplest way to get started. The `--build` flag will create the Docker image if it doesn't already exist.
+To build and run the application using your computer's CPU, use the following two-step process. This is the most compatible way to get started.
 
-```bash
-docker compose up --build --build-arg USE_GPU=false
-```
+1.  **Build the Docker image:**
+    This command creates a Docker image optimized for CPU usage.
 
-Once the application is running, open your web browser and navigate to `http://localhost:8502`.
+    ```bash
+    docker compose build --build-arg USE_GPU=false
+    ```
+
+2.  **Start the application:**
+    Once the image is built, this command will start the Streamlit application. Open your web browser and navigate to `http://localhost:8502`.
+
+    ```bash
+    docker compose up
+    ```
 
 #### 2\. Running with GPU (For faster performance) 🚀
 
-If you have a compatible NVIDIA GPU, you can build and run the application with GPU support for significantly faster transcription. This requires an extra step.
+If you have a compatible NVIDIA GPU, you can build and run the application with GPU support for significantly faster transcription. This requires a manual change to the `docker-compose.yml` file and a different build command.
 
 1.  **Enable GPU in `docker-compose.yml`**: Open the `docker-compose.yml` file and uncomment the `deploy` section to allow the container to access your GPU.
 
@@ -59,13 +67,19 @@ If you have a compatible NVIDIA GPU, you can build and run the application with 
     #               capabilities: [gpu]
     ```
 
-2.  **Run the command**: With the `deploy` section uncommented, run the following command. The `USE_GPU=true` argument tells Docker to install the necessary GPU-compatible libraries.
+2.  **Build the Docker image:**
+    This command creates a Docker image optimized for GPU usage.
 
     ```bash
-    docker compose up --build --build-arg USE_GPU=true
+    docker compose build --build-arg USE_GPU=true
     ```
 
-Once the application is running, open your web browser and navigate to `http://localhost:8502`.
+3.  **Start the application:**
+    Once the image is built, this command will start the Streamlit application with GPU access. Open your web browser and navigate to `http://localhost:8502`.
+
+    ```bash
+    docker compose up
+    ```
 
 #### 3\. Workflow
 
