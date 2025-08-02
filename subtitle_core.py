@@ -167,6 +167,11 @@ def render_subtitled_video(
             subtitle_overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
             overlay_draw = ImageDraw.Draw(subtitle_overlay)
 
+            # Precompute fixed height using "Amy" with active font
+            amy_bbox = overlay_draw.textbbox((0, 0), "Amy", font=active_font)
+            amy_fixed_height = amy_bbox[3] - amy_bbox[1]
+
+
             for seg in transcript:
                 if seg["start"] <= t <= seg["end"]:
                     wrapped_lines_data = []
@@ -255,7 +260,7 @@ def render_subtitled_video(
                             word_text = word_data_original["word"]
                             is_active_word = (word_data_original["start"] <= t <= word_data_original["end"])
 
-                            rendered_word_text = apply_case(word_text, word_case)
+                            rendered_word_text = apply_case(word_text.strip(), word_case)
                             
                             word_font = active_font if is_active_word else normal_font
                             
@@ -266,21 +271,19 @@ def render_subtitled_video(
                             # Only draw the active word background if opacity is > 0
                             if is_active_word and active_word_bg_opacity > 0:
                                 word_bbox = overlay_draw.textbbox((current_word_x, current_line_y), rendered_word_text, font=word_font)
-                                
+
                                 active_word_padding_x = 3
-                                active_word_padding_y = 6
-                                
+                                total_bg_height = amy_fixed_height
+
+                                bg_top = current_line_y
+                                bg_bottom = current_line_y + (total_bg_height*1.2)
                                 bg_left = word_bbox[0] - active_word_padding_x
-                                bg_top = word_bbox[1] - active_word_padding_y
                                 bg_right = word_bbox[2] + active_word_padding_x
-                                bg_bottom = word_bbox[3] + active_word_padding_y
-                                
+
                                 overlay_draw.rectangle(
                                     (bg_left, bg_top, bg_right, bg_bottom),
                                     fill=active_word_bg_rgba
                                 )
-
-        
 
                             
                             if border_thickness > 0:
