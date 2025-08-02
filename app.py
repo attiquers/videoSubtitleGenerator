@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 import sys
 import shutil
 
-from subtitle_core import extract_audio, transcribe, render_subtitled_video
+from subtitle_core import extract_audio, transcribe, render_subtitled_video, _wrap_text
 from srt_tools import to_srt, from_srt
 
 # --------------------- CONFIG ---------------------
@@ -59,35 +59,108 @@ for i, (name, _) in enumerate(ALL_MODELS.items()):
 st.markdown(f"**Current Model:** `{st.session_state.selected_model}`")
 st.markdown("---")
 
+# --------------------- SESSION STATE INITIALIZATION ---------------------
+# Initialize all styling parameters in session state for persistence and programmatic updates
+for key, default in {
+    "word_case": "As Is",
+    "font_size": 48,
+    "y_position_percent": 80,
+    "x_offset": 0,
+    "subtitle_area_width_percent": 80,
+    "normal_font_color": "#FFFFFF",
+    "normal_opacity": 100,
+    "bg_color": "#000000",
+    "bg_opacity": 0,
+    "bg_border_radius": 0,
+    "normal_outline_color": "#000000",
+    "normal_outline_opacity": 100,
+    "normal_outline_thickness": 3,
+    "active_font_color": "#5096FF",
+    "active_opacity": 100,
+    "size_scale": 1.0,
+    "active_bg_color": "#34DD00",
+    "active_bg_opacity": 90,
+    "active_bg_border_radius": 10,
+    "active_outline_color": "#000000",
+    "active_outline_opacity": 100,
+    "active_outline_thickness": 3,
+    "disable_active_style": False,
+    "original_video_path": None,
+    "original_transcript": None,
+    "srt_content": "",
+    "temp_dirs": [],
+    "generated_video_path": None
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
 # --------------------- SIDEBAR CONTROLS ---------------------
 st.sidebar.header("Subtitle Customization")
 with st.sidebar.expander("General Settings"):
-    word_case = st.selectbox("Word Case", ["As Is", "UPPERCASE", "lowercase", "Title Case"])
-    # Changed vertical position slider to a percentage-based 0-100 range
-    y_position_percent = st.slider("Vertical Position (%)", 0, 100, 80)
-    x_offset = st.slider("Horizontal Offset", -300, 300, 0)
-    subtitle_area_width_percent = st.slider("Subtitle Width (%)", 50, 100, 80)
+    st.session_state.word_case = st.selectbox("Word Case", ["As Is", "UPPERCASE", "lowercase", "Title Case"], index=["As Is", "UPPERCASE", "lowercase", "Title Case"].index(st.session_state.word_case))
+    st.session_state.font_size = st.slider("Font Size (px)", 20, 100, value=st.session_state.font_size, key="font_size_slider")
+    st.session_state.y_position_percent = st.slider("Vertical Position (%)", 0, 100, value=st.session_state.y_position_percent, key="y_position_slider")
+    st.session_state.x_offset = st.slider("Horizontal Offset", -300, 300, value=st.session_state.x_offset, key="x_offset_slider")
+    st.session_state.subtitle_area_width_percent = st.slider("Subtitle Width (%)", 50, 100, value=st.session_state.subtitle_area_width_percent, key="subtitle_width_slider")
 
 with st.sidebar.expander("Normal Style"):
-    normal_font_color = st.color_picker("Text Color", "#FFFFFF")
-    normal_opacity = st.slider("Opacity (%)", 0, 100, 100)
-    bg_color = st.color_picker("Background", "#000000")
-    bg_opacity = st.slider("BG Opacity (%)", 0, 100, 0)
-    bg_border_radius = st.slider("BG Border Radius (px)", 0, 50, 0)
-    normal_outline_color = st.color_picker("Outline Color", "#000000")
-    normal_outline_opacity = st.slider("Outline Opacity", 0, 100, 100)
-    normal_outline_thickness = st.slider("Outline Thickness", 0, 10, 3)
+    st.session_state.normal_font_color = st.color_picker("Text Color", st.session_state.normal_font_color, key="normal_color_picker")
+    st.session_state.normal_opacity = st.slider("Opacity (%)", 0, 100, value=st.session_state.normal_opacity, key="normal_opacity_slider")
+    st.session_state.bg_color = st.color_picker("Background", st.session_state.bg_color, key="bg_color_picker")
+    st.session_state.bg_opacity = st.slider("BG Opacity (%)", 0, 100, value=st.session_state.bg_opacity, key="bg_opacity_slider")
+    st.session_state.bg_border_radius = st.slider("BG Border Radius (px)", 0, 50, value=st.session_state.bg_border_radius, key="bg_radius_slider")
+    st.session_state.normal_outline_color = st.color_picker("Outline Color", st.session_state.normal_outline_color, key="normal_outline_color_picker")
+    st.session_state.normal_outline_opacity = st.slider("Outline Opacity", 0, 100, value=st.session_state.normal_outline_opacity, key="normal_outline_opacity_slider")
+    st.session_state.normal_outline_thickness = st.slider("Outline Thickness", 0, 10, value=st.session_state.normal_outline_thickness, key="normal_outline_thickness_slider")
 
 with st.sidebar.expander("Active Word Style"):
-    active_font_color = st.color_picker("Active Text Color", "#5096FF")
-    active_opacity = st.slider("Active Opacity (%)", 0, 100, 100)
-    size_scale = st.slider("Size Scale", 0.5, 2.0, 1.0, step=0.05)
-    active_bg_color = st.color_picker("Active BG Color", "#34DD00")
-    active_bg_opacity = st.slider("Active BG Opacity", 0, 100, 90)
-    active_bg_border_radius = st.slider("Active BG Border Radius (px)", 0, 50, 10)
-    active_outline_color = st.color_picker("Active Border", "#000000")
-    active_outline_opacity = st.slider("Active Outline Opacity", 0, 100, 100)
-    active_outline_thickness = st.slider("Active Thickness", 0, 10, 3)
+    st.session_state.disable_active_style = st.checkbox("Disable Active Style", value=st.session_state.disable_active_style)
+    st.session_state.active_font_color = st.color_picker("Active Text Color", st.session_state.active_font_color, key="active_color_picker")
+    st.session_state.active_opacity = st.slider("Active Opacity (%)", 0, 100, value=st.session_state.active_opacity, key="active_opacity_slider")
+    st.session_state.size_scale = st.slider("Size Scale", 0.5, 2.0, value=st.session_state.size_scale, step=0.05, key="size_scale_slider")
+    st.session_state.active_bg_color = st.color_picker("Active BG Color", st.session_state.active_bg_color, key="active_bg_color_picker")
+    st.session_state.active_bg_opacity = st.slider("Active BG Opacity", 0, 100, value=st.session_state.active_bg_opacity, key="active_bg_opacity_slider")
+    st.session_state.active_bg_border_radius = st.slider("Active BG Border Radius (px)", 0, 50, value=st.session_state.active_bg_border_radius, key="active_bg_radius_slider")
+    st.session_state.active_outline_color = st.color_picker("Active Border", st.session_state.active_outline_color, key="active_outline_color_picker")
+    st.session_state.active_outline_opacity = st.slider("Active Outline Opacity", 0, 100, value=st.session_state.active_outline_opacity, key="active_outline_opacity_slider")
+    st.session_state.active_outline_thickness = st.slider("Active Thickness", 0, 10, value=st.session_state.active_outline_thickness, key="active_outline_thickness_slider")
+
+# --------------------- RECOMMENDED STYLES BUTTONS ---------------------
+st.markdown("---")
+st.sidebar.header("Recommended Styles")
+cols = st.sidebar.columns(2)
+
+if cols[0].button("Vertical Style"):
+    st.session_state.y_position_percent = 50
+    st.session_state.word_case = "UPPERCASE"
+    st.session_state.normal_font_color = "#FFFFFF"
+    st.session_state.normal_outline_color = "#000000"
+    st.session_state.normal_outline_thickness = 3
+    st.session_state.bg_opacity = 0
+    st.session_state.active_font_color = "#FFFFFF"
+    st.session_state.active_outline_color = "#000000"
+    st.session_state.active_outline_thickness = 3
+    st.session_state.active_bg_color = "#FFFF00"  # Set active background color to yellow
+    st.session_state.active_bg_opacity = 100     # Set active background opacity to 100
+    st.session_state.size_scale = 1.0
+    st.session_state.disable_active_style = False
+    st.rerun()
+
+if cols[1].button("Horizontal Style"):
+    st.session_state.y_position_percent = 10
+    st.session_state.word_case = "Title Case"
+    st.session_state.normal_font_color = "#FFFF00"
+    st.session_state.normal_outline_color = "#000000"
+    st.session_state.normal_outline_thickness = 1
+    st.session_state.bg_color = "#808080"
+    st.session_state.bg_opacity = 50
+    st.session_state.active_font_color = "#FFFF00"
+    st.session_state.active_outline_color = "#000000"
+    st.session_state.active_outline_thickness = 1
+    st.session_state.active_bg_opacity = 0
+    st.session_state.size_scale = 1.0
+    st.session_state.disable_active_style = True
+    st.rerun()
 
 # --------------------- LIVE PREVIEW ---------------------
 def hex_to_rgba(hex_color, alpha_percent):
@@ -150,142 +223,150 @@ def apply_case(word_text, case_option):
     else:
         return word_text
 
-def calculate_font_size(draw, text, max_width, font_path, max_font_size=80):
-    font_size = max_font_size
-    font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
-    text_width = draw.textlength(text, font=font)
-    while text_width > max_width and font_size > 10:
-        font_size -= 1
-        font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
-        text_width = draw.textlength(text, font=font)
-    return font_size
-
 def generate_preview_image(width, height, subtitle_text, active_word_index, **kwargs):
     img = Image.new("RGB", (width, height), "black")
     overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-    
+
     font_path = get_font_path("Arial.ttf")
-    
-    max_subtitle_width_pixels = int(width * (kwargs['subtitle_area_width_percent'] / 100.0))
-    font_size = calculate_font_size(overlay_draw, subtitle_text, max_subtitle_width_pixels, font_path)
-    
+    font_size = kwargs.get("font_size", 48)
+
     normal_font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
     active_font = ImageFont.truetype(font_path, int(font_size * kwargs['size_scale'])) if font_path else ImageFont.load_default()
-    
-    words = subtitle_text.split()
-    rendered_words = [apply_case(word, kwargs['word_case']) for word in words]
-    
-    total_line_width = sum(overlay_draw.textlength(word + " ", font=normal_font) for word in rendered_words) - overlay_draw.textlength(" ", font=normal_font)
-    
-    # Calculate y_pos based on percentage
-    line_height = font_size * 1.2
+
+    # Text wrapping logic for the preview
+    max_subtitle_width_pixels = int(width * (kwargs['subtitle_area_width_percent'] / 100.0))
+    words_data = [{"word": w, "start": 0, "end": 0} for w in subtitle_text.split()]
+
+    # We use a dummy transcription format to leverage the wrapping function from subtitle_core
+    wrapped_lines_data = _wrap_text(words_data, max_subtitle_width_pixels, normal_font, active_font, kwargs['word_case'], overlay_draw)
+
+    line_height_estimate = normal_font.size * 1.2
+    total_text_height = len(wrapped_lines_data) * line_height_estimate
+
     y_pos_pixels = height - int(height * (kwargs['y_position_percent'] / 100.0))
-    y_pos = y_pos_pixels - (line_height // 2)
-    
-    x_pos = (width // 2 + kwargs['x_offset']) - (total_line_width // 2)
-    
-    # Background box dimensions
-    bg_rect_left = x_pos - 10
-    bg_rect_right = x_pos + total_line_width + 10
-    bg_rect_top = y_pos - 5
-    bg_rect_bottom = y_pos + line_height + 5
-    
+    y_pos_block_start = y_pos_pixels - (total_text_height // 2)
+
+    # Calculate overall block width for background
+    max_line_width = 0
+    for line in wrapped_lines_data:
+        line_width = sum(overlay_draw.textlength(apply_case(word['word'], kwargs['word_case']) + " ", font=normal_font) for word in line) - overlay_draw.textlength(" ", font=normal_font)
+        if line_width > max_line_width:
+            max_line_width = line_width
+
+    x_pos_block_start = (width // 2 + kwargs['x_offset']) - (max_line_width // 2)
+
+    padding = 10
+    bg_rect_left = x_pos_block_start - padding
+    bg_rect_right = x_pos_block_start + max_line_width + padding
+    bg_rect_top = y_pos_block_start - (0.5 * padding)
+    bg_rect_bottom = y_pos_block_start + total_text_height + (1.5 * padding)
+
     bg_rgba = hex_to_rgba(kwargs['bg_color'], kwargs['bg_opacity'])
     if kwargs['bg_opacity'] > 0:
         draw_rounded_rectangle(overlay_draw, (bg_rect_left, bg_rect_top, bg_rect_right, bg_rect_bottom), kwargs['bg_border_radius'], fill=bg_rgba)
-    
-    current_word_x = x_pos
-    
-    for i, word in enumerate(rendered_words):
-        is_active = (i == active_word_index)
-        
-        word_font = active_font if is_active else normal_font
-        fill_color_rgba = hex_to_rgba(kwargs['active_font_color'], kwargs['active_opacity']) if is_active else hex_to_rgba(kwargs['normal_font_color'], kwargs['normal_opacity'])
-        border_color_rgba = hex_to_rgba(kwargs['active_outline_color'], kwargs['active_outline_opacity']) if is_active else hex_to_rgba(kwargs['normal_outline_color'], kwargs['normal_outline_opacity'])
-        border_thickness = kwargs['active_outline_thickness'] if is_active else kwargs['normal_outline_thickness']
 
-        if is_active and kwargs['active_bg_opacity'] > 0:
-            word_bbox = overlay_draw.textbbox((current_word_x, y_pos), word, font=word_font)
-            bg_left = word_bbox[0] - 5
-            bg_right = word_bbox[2] + 5
-            bg_top = y_pos
-            bg_bottom = y_pos + line_height
-            active_bg_rgba = hex_to_rgba(kwargs['active_bg_color'], kwargs['active_bg_opacity'])
-            draw_rounded_rectangle(overlay_draw, (bg_left, bg_top, bg_right, bg_bottom), kwargs['active_bg_border_radius'], fill=active_bg_rgba)
-        
-        if border_thickness > 0:
-            for x_offset_outline in range(-border_thickness, border_thickness + 1):
-                for y_offset_outline in range(-border_thickness, border_thickness + 1):
-                    if x_offset_outline != 0 or y_offset_outline != 0:
-                        overlay_draw.text(
-                            (current_word_x + x_offset_outline, y_pos + y_offset_outline),
-                            word,
-                            font=word_font,
-                            fill=border_color_rgba
-                        )
-        
-        overlay_draw.text(
-            (current_word_x, y_pos),
-            word,
-            font=word_font,
-            fill=fill_color_rgba
-        )
-        current_word_x += overlay_draw.textlength(word + " ", font=word_font)
-    
+    current_line_y = y_pos_block_start + padding
+    word_counter = 0
+
+    for line in wrapped_lines_data:
+        line_width_for_centering = sum(overlay_draw.textlength(apply_case(word['word'], kwargs['word_case']) + " ", font=normal_font) for word in line) - overlay_draw.textlength(" ", font=normal_font)
+        current_word_x = (width // 2 + kwargs['x_offset']) - (line_width_for_centering // 2)
+
+        for word_data in line:
+            is_active = (word_counter == active_word_index)
+            rendered_word_text = apply_case(word_data['word'], kwargs['word_case'])
+
+            # Conditionally apply active styles or fall back to normal
+            if is_active and not kwargs.get('disable_active_style', False):
+                word_font = active_font
+                fill_color_rgba = hex_to_rgba(kwargs['active_font_color'], kwargs['active_opacity'])
+                border_color_rgba = hex_to_rgba(kwargs['active_outline_color'], kwargs['active_outline_opacity'])
+                border_thickness = kwargs['active_outline_thickness']
+                if kwargs['active_bg_opacity'] > 0:
+                    word_bbox = overlay_draw.textbbox((current_word_x, current_line_y), rendered_word_text, font=word_font)
+                    space_width = (overlay_draw.textlength(" ", font=word_font)) * 0.5
+                    bg_top = word_bbox[1] - space_width
+                    bg_bottom = word_bbox[3] + space_width
+                    bg_left = word_bbox[0] - space_width
+                    bg_right = word_bbox[2] + space_width
+                    draw_rounded_rectangle(overlay_draw, (bg_left, bg_top, bg_right, bg_bottom), kwargs['active_bg_border_radius'], fill=hex_to_rgba(kwargs['active_bg_color'], kwargs['active_bg_opacity']))
+            else:
+                word_font = normal_font
+                fill_color_rgba = hex_to_rgba(kwargs['normal_font_color'], kwargs['normal_opacity'])
+                border_color_rgba = hex_to_rgba(kwargs['normal_outline_color'], kwargs['normal_outline_opacity'])
+                border_thickness = kwargs['normal_outline_thickness']
+
+
+            if border_thickness > 0:
+                for x_offset_outline in range(-border_thickness, border_thickness + 1):
+                    for y_offset_outline in range(-border_thickness, border_thickness + 1):
+                        if x_offset_outline != 0 or y_offset_outline != 0:
+                            overlay_draw.text(
+                                (current_word_x + x_offset_outline, current_line_y + y_offset_outline),
+                                rendered_word_text,
+                                font=word_font,
+                                fill=border_color_rgba
+                            )
+
+            overlay_draw.text(
+                (current_word_x, current_line_y),
+                rendered_word_text,
+                font=word_font,
+                fill=fill_color_rgba
+            )
+            current_word_x += overlay_draw.textlength(rendered_word_text + " ", font=word_font)
+            word_counter += 1
+
+        current_line_y += line_height_estimate
+
     img = Image.alpha_composite(img.convert('RGBA'), overlay)
     return img.convert("RGB")
 
+
 st.subheader("Live Subtitle Preview")
-st.markdown("This shows a sample of how your subtitles will look.")
+st.markdown("This shows a sample of how your subtitles will look. Change the **Subtitle Width** to see the text wrap automatically.")
 
 preview_cols = st.columns(2)
 with preview_cols[0]:
     st.markdown("#### Horizontal Video Preview")
     preview_h_params = {
-        "word_case": word_case, "y_position_percent": y_position_percent, "x_offset": x_offset,
-        "subtitle_area_width_percent": subtitle_area_width_percent,
-        "normal_font_color": normal_font_color, "normal_opacity": normal_opacity, "bg_color": bg_color,
-        "bg_opacity": bg_opacity, "bg_border_radius": bg_border_radius, "normal_outline_color": normal_outline_color,
-        "normal_outline_opacity": normal_outline_opacity, "normal_outline_thickness": normal_outline_thickness,
-        "active_font_color": active_font_color, "active_opacity": active_opacity, "size_scale": size_scale,
-        "active_bg_color": active_bg_color, "active_bg_opacity": active_bg_opacity,
-        "active_bg_border_radius": active_bg_border_radius, "active_outline_color": active_outline_color,
-        "active_outline_opacity": active_outline_opacity, "active_outline_thickness": active_outline_thickness,
+        "word_case": st.session_state.word_case, "y_position_percent": st.session_state.y_position_percent, "x_offset": st.session_state.x_offset,
+        "subtitle_area_width_percent": st.session_state.subtitle_area_width_percent, "font_size": st.session_state.font_size/2,
+        "normal_font_color": st.session_state.normal_font_color, "normal_opacity": st.session_state.normal_opacity, "bg_color": st.session_state.bg_color,
+        "bg_opacity": st.session_state.bg_opacity, "bg_border_radius": st.session_state.bg_border_radius, "normal_outline_color": st.session_state.normal_outline_color,
+        "normal_outline_opacity": st.session_state.normal_outline_opacity, "normal_outline_thickness": st.session_state.normal_outline_thickness,
+        "active_font_color": st.session_state.active_font_color, "active_opacity": st.session_state.active_opacity, "size_scale": st.session_state.size_scale,
+        "active_bg_color": st.session_state.active_bg_color, "active_bg_opacity": st.session_state.active_bg_opacity,
+        "active_bg_border_radius": st.session_state.active_bg_border_radius, "active_outline_color": st.session_state.active_outline_color,
+        "active_outline_opacity": st.session_state.active_outline_opacity, "active_outline_thickness": st.session_state.active_outline_thickness,
+        "disable_active_style": st.session_state.disable_active_style,
     }
-    
-    preview_horizontal = generate_preview_image(640, 360, "This is a sample subtitle line", 2, **preview_h_params)
+
+    preview_horizontal = generate_preview_image(640, 360, "This is a sample subtitle line meow meow.", 3, **preview_h_params)
     st.image(preview_horizontal, use_column_width=True)
 
 with preview_cols[1]:
     st.markdown("#### Vertical Video Preview")
     preview_v_params = {
-        "word_case": word_case, "y_position_percent": y_position_percent, "x_offset": x_offset,
-        "subtitle_area_width_percent": subtitle_area_width_percent,
-        "normal_font_color": normal_font_color, "normal_opacity": normal_opacity, "bg_color": bg_color,
-        "bg_opacity": bg_opacity, "bg_border_radius": bg_border_radius, "normal_outline_color": normal_outline_color,
-        "normal_outline_opacity": normal_outline_opacity, "normal_outline_thickness": normal_outline_thickness,
-        "active_font_color": active_font_color, "active_opacity": active_opacity, "size_scale": size_scale,
-        "active_bg_color": active_bg_color, "active_bg_opacity": active_bg_opacity,
-        "active_bg_border_radius": active_bg_border_radius, "active_outline_color": active_outline_color,
-        "active_outline_opacity": active_outline_opacity, "active_outline_thickness": active_outline_thickness,
+        "word_case": st.session_state.word_case, "y_position_percent": st.session_state.y_position_percent, "x_offset": st.session_state.x_offset,
+        "subtitle_area_width_percent": st.session_state.subtitle_area_width_percent, "font_size": st.session_state.font_size/3,
+        "normal_font_color": st.session_state.normal_font_color, "normal_opacity": st.session_state.normal_opacity, "bg_color": st.session_state.bg_color,
+        "bg_opacity": st.session_state.bg_opacity, "bg_border_radius": st.session_state.bg_border_radius, "normal_outline_color": st.session_state.normal_outline_color,
+        "normal_outline_opacity": st.session_state.normal_outline_opacity, "normal_outline_thickness": st.session_state.normal_outline_thickness,
+        "active_font_color": st.session_state.active_font_color, "active_opacity": st.session_state.active_opacity, "size_scale": st.session_state.size_scale,
+        "active_bg_color": st.session_state.active_bg_color, "active_bg_opacity": st.session_state.active_bg_opacity,
+        "active_bg_border_radius": st.session_state.active_bg_border_radius, "active_outline_color": st.session_state.active_outline_color,
+        "active_outline_opacity": st.session_state.active_outline_opacity, "active_outline_thickness": st.session_state.active_outline_thickness,
+        "disable_active_style": st.session_state.disable_active_style,
     }
-    preview_vertical = generate_preview_image(360, 640, "This is a sample subtitle line", 2, **preview_v_params)
+    preview_vertical = generate_preview_image(360, 640, "This is a sample subtitle line meow meow.", 3, **preview_v_params)
     st.image(preview_vertical, use_column_width=True)
-    
+
 uploaded = st.file_uploader("Upload MP4 Video", type=["mp4"])
 if uploaded: st.video(uploaded)
 
 # --------------------- SESSION INIT ---------------------
-for key, default in {
-    "original_video_path": None,
-    "original_transcript": None,
-    "srt_content": "",
-    "temp_dirs": [],
-    "generated_video_path": None
-}.items():
-    st.session_state.setdefault(key, default)
-
 def cleanup_temp_dirs():
     for d in st.session_state.temp_dirs:
         if os.path.exists(d): shutil.rmtree(d)
@@ -302,27 +383,29 @@ def generate_video(input_path, output_path, transcript, progress, log_area):
         render_subtitled_video(
             input_path, transcript, output_path,
             st_bar=progress, log_func=log,
-            word_case=word_case,
-            normal_font_color=normal_font_color,
-            normal_font_opacity=normal_opacity,
-            normal_border_color=normal_outline_color,
-            normal_border_opacity=normal_outline_opacity,
-            normal_border_thickness=normal_outline_thickness,
-            active_font_color=active_font_color,
-            active_font_opacity=active_opacity,
-            active_word_size_scale=size_scale,
-            active_word_bg_color=active_bg_color,
-            active_word_bg_opacity=active_bg_opacity,
-            active_word_bg_border_radius=active_bg_border_radius,
-            active_border_color=active_outline_color,
-            active_border_opacity=active_outline_opacity,
-            active_border_thickness=active_outline_thickness,
-            bg_color=bg_color,
-            bg_opacity=bg_opacity,
-            bg_border_radius=bg_border_radius,
-            y_position_percent=y_position_percent,
-            x_offset=x_offset,
-            subtitle_area_width_percent=subtitle_area_width_percent
+            word_case=st.session_state.word_case,
+            font_size=st.session_state.font_size,
+            normal_font_color=st.session_state.normal_font_color,
+            normal_font_opacity=st.session_state.normal_opacity,
+            normal_border_color=st.session_state.normal_outline_color,
+            normal_border_opacity=st.session_state.normal_outline_opacity,
+            normal_border_thickness=st.session_state.normal_outline_thickness,
+            active_font_color=st.session_state.active_font_color,
+            active_font_opacity=st.session_state.active_opacity,
+            active_word_size_scale=st.session_state.size_scale,
+            active_word_bg_color=st.session_state.active_bg_color,
+            active_word_bg_opacity=st.session_state.active_bg_opacity,
+            active_word_bg_border_radius=st.session_state.active_bg_border_radius,
+            active_border_color=st.session_state.active_outline_color,
+            active_border_opacity=st.session_state.active_outline_opacity,
+            active_border_thickness=st.session_state.active_outline_thickness,
+            bg_color=st.session_state.bg_color,
+            bg_opacity=st.session_state.bg_opacity,
+            bg_border_radius=st.session_state.bg_border_radius,
+            y_position_percent=st.session_state.y_position_percent,
+            x_offset=st.session_state.x_offset,
+            subtitle_area_width_percent=st.session_state.subtitle_area_width_percent,
+            disable_active_style=st.session_state.disable_active_style
         )
         return True, output_path
     except Exception as e:

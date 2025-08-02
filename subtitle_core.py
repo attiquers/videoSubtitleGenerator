@@ -1,4 +1,3 @@
-# subtitle_core.py
 import numpy as np
 from moviepy import VideoFileClip, CompositeVideoClip
 from moviepy.video.VideoClip import VideoClip
@@ -8,9 +7,12 @@ from proglog import ProgressBarLogger
 import os
 import traceback
 import sys
+from functools import lru_cache
 
-# Helper function to draw a rounded rectangle
+# --- Helper Functions ---
+
 def draw_rounded_rectangle(draw_context, xy, radius, fill=None, outline=None):
+    """Draws a rectangle with rounded corners using Pillow."""
     x0, y0, x1, y1 = xy
     max_radius = min((x1 - x0) / 2, (y1 - y0) / 2)
     radius = min(radius, max_radius)
@@ -25,14 +27,12 @@ def draw_rounded_rectangle(draw_context, xy, radius, fill=None, outline=None):
     draw_context.pieslice([(x1 - 2 * radius, y1 - 2 * radius), (x1, y1)], 0, 90, fill=fill, outline=outline)
 
 class StreamlitLogger(ProgressBarLogger):
+    """A custom logger for moviepy that updates a Streamlit progress bar."""
     def __init__(self, st_bar, log_func):
         super().__init__()
         self.st_bar = st_bar
         self.log = log_func
         self.prev_pct = -1
-
-    def callback(self, **changes):
-        return
 
     def bars_callback(self, bar, attr, value, old_value=None):
         total = self.bars.get(bar, {}).get("total", 1)
@@ -42,6 +42,7 @@ class StreamlitLogger(ProgressBarLogger):
             self.st_bar.progress(pct)
 
 def hex_to_rgba(hex_color, alpha_percent):
+    """Converts a hex color and alpha percentage to an RGBA tuple."""
     hex_color = hex_color.lstrip('#')
     try:
         r = int(hex_color[0:2], 16)
@@ -51,6 +52,42 @@ def hex_to_rgba(hex_color, alpha_percent):
         return (r, g, b, a)
     except ValueError:
         raise ValueError(f"Invalid hex color format: {hex_color}")
+
+def apply_case(word_text, case_option):
+    """Applies a specific case to a word."""
+    if case_option == "UPPERCASE":
+        return word_text.upper()
+    elif case_option == "lowercase":
+        return word_text.lower()
+    elif case_option == "Title Case":
+        return word_text.title()
+    else:
+        return word_text
+
+def get_font_path(log_func, font_name="Arial.ttf"):
+    """Finds and returns the path to a system font."""
+    if sys.platform == "win32":
+        font_path = os.path.join(os.environ.get("WINDIR", ""), "Fonts", font_name)
+        if os.path.exists(font_path): return font_path
+    elif sys.platform == "linux":
+        linux_font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ]
+        for path in linux_font_paths:
+            if os.path.exists(path): return path
+    elif sys.platform == "darwin":
+        macos_font_paths = [
+            "/Library/Fonts/Arial.ttf",
+            "/System/Library/Fonts/Arial.ttf",
+        ]
+        for path in macos_font_paths:
+            if os.path.exists(path): return font_path
+    log_func(f"ERROR: No suitable font found for the system. Falling back to default.")
+    return None
+
+# --- Core Functions ---
 
 def extract_audio(video_path, audio_path, log_func):
     log_func("🔊 Extracting audio…")
@@ -81,34 +118,80 @@ def transcribe(audio_path, model_path, log_func):
         traceback.print_exc()
         raise
 
-def get_font_path(log_func, font_name="Arial.ttf"):
-    if sys.platform == "win32":
-        try:
-            return ImageFont.truetype(font_name)
-        except OSError:
-            log_func(f"Warning: {font_name} not found by Pillow. Trying system path.")
-            font_path = os.path.join(os.environ["WINDIR"], "Fonts", font_name)
-            if os.path.exists(font_path):
-                return font_path
-    elif sys.platform == "linux":
-        linux_font_paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        ]
-        for path in linux_font_paths:
-            if os.path.exists(path):
-                return path
-    elif sys.platform == "darwin":
-        macos_font_paths = [
-            "/Library/Fonts/Arial.ttf",
-            "/System/Library/Fonts/Arial.ttf",
-        ]
-        for path in macos_font_paths:
-            if os.path.exists(path):
-                return path
-    log_func(f"ERROR: No suitable font found for the system. Falling back to default.")
-    return None
+def _wrap_text(words, max_width, normal_font, active_font, word_case, draw_context):
+    """
+    Wraps a list of words into lines based on a max width.
+    Returns a list of lines, where each line is a list of words.
+    """
+    lines = []
+    current_line = []
+    current_width = 0
+    space_width = draw_context.textlength(" ", font=normal_font)
+
+    for word_data in words:
+        word_text = apply_case(word_data["word"], word_case)
+        # Use normal font for wrapping calculation
+        word_width = draw_context.textlength(word_text, font=normal_font)
+
+        # Check if the word fits on the current line
+        if current_line and (current_width + space_width + word_width > max_width):
+            lines.append(current_line)
+            current_line = [word_data]
+            current_width = word_width
+        else:
+            if current_line:
+                current_width += space_width
+            current_line.append(word_data)
+            current_width += word_width
+
+    if current_line:
+        lines.append(current_line)
+
+    return lines
+
+@lru_cache(maxsize=128)
+def _get_text_layout(seg_tuple, max_width, font_tuple, word_case):
+    """
+    Pre-computes the layout for a subtitle segment to avoid recalculation.
+    Using tuples for memoization cache key.
+    """
+    words = [
+        {"word": w[0], "start": w[1], "end": w[2]}
+        for w in seg_tuple
+    ]
+
+    # Create temporary fonts and drawing context to calculate layout
+    font_path, font_size, active_scale = font_tuple
+    normal_font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
+
+    temp_img = Image.new("RGBA", (1,1))
+    temp_draw = ImageDraw.Draw(temp_img)
+
+    lines = _wrap_text(words, max_width, normal_font, None, word_case, temp_draw)
+
+    # Pre-calculate line widths and total height
+    line_layouts = []
+    total_text_height = 0
+    line_height_estimate = normal_font.size * 1.2
+
+    for line_words in lines:
+        line_width = 0
+        word_layouts = []
+        for word_data in line_words:
+            word_text = apply_case(word_data["word"], word_case)
+            word_width = temp_draw.textlength(word_text, font=normal_font)
+            word_layouts.append({
+                "word": word_data,
+                "text": word_text,
+                "width": word_width
+            })
+            line_width += word_width + temp_draw.textlength(" ", font=normal_font)
+
+        line_width -= temp_draw.textlength(" ", font=normal_font) if line_words else 0
+        line_layouts.append({"words": word_layouts, "width": line_width})
+        total_text_height += line_height_estimate
+
+    return line_layouts, total_text_height
 
 def render_subtitled_video(
     input_path,
@@ -137,7 +220,8 @@ def render_subtitled_video(
     bg_border_radius=0,
     y_position_percent=80,
     x_offset=0,
-    subtitle_area_width_percent=80
+    subtitle_area_width_percent=80,
+    disable_active_style=False  # Added the new parameter
 ):
     log_func("🎞️ Rendering subtitles and embedding audio… This is the longest step.")
     try:
@@ -147,191 +231,111 @@ def render_subtitled_video(
 
         normal_text_rgba = hex_to_rgba(normal_font_color, normal_font_opacity)
         normal_border_rgba = hex_to_rgba(normal_border_color, normal_border_opacity)
-        active_text_rgba = hex_to_rgba(active_font_color, active_font_opacity)
-        active_border_rgba = hex_to_rgba(active_border_color, active_border_opacity)
-        active_word_bg_rgba = hex_to_rgba(active_word_bg_color, active_word_bg_opacity)
+
+        # Active styles are only calculated if they are not disabled
+        if not disable_active_style:
+            active_text_rgba = hex_to_rgba(active_font_color, active_font_opacity)
+            active_border_rgba = hex_to_rgba(active_border_color, active_border_opacity)
+            active_word_bg_rgba = hex_to_rgba(active_word_bg_color, active_word_bg_opacity)
+
         background_rgba = hex_to_rgba(bg_color, bg_opacity)
 
         font_path = get_font_path(log_func, "Arial.ttf")
-        
+
         normal_font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
         active_font = ImageFont.truetype(font_path, int(font_size * active_word_size_scale)) if font_path else ImageFont.load_default()
-        
-        log_func(f"Normal font size: {font_size}px")
-        log_func(f"Active word font size: {int(font_size * active_word_size_scale)}px")
-        
-        max_subtitle_width_pixels = int(width * (subtitle_area_width_percent / 100.0))
-        log_func(f"Max subtitle width: {max_subtitle_width_pixels}px ({subtitle_area_width_percent}%)")
-        padding = 10
 
-        def apply_case(word_text, case_option):
-            if case_option == "UPPERCASE":
-                return word_text.upper()
-            elif case_option == "lowercase":
-                return word_text.lower()
-            elif case_option == "Title Case":
-                return word_text.title()
-            else:
-                return word_text
+        max_subtitle_width_pixels = int(width * (subtitle_area_width_percent / 100.0))
+        padding = 10
+        line_height_estimate = normal_font.size * 1.2
+
+        memoized_font_tuple = (font_path, font_size, active_word_size_scale)
+
+        # Pre-process all segments once
+        processed_segments = []
+        for seg in transcript:
+            seg_tuple = tuple((w["word"], w["start"], w["end"]) for w in seg["words"])
+            line_layouts, total_height = _get_text_layout(
+                seg_tuple, max_subtitle_width_pixels, memoized_font_tuple, word_case
+            )
+            processed_segments.append({
+                "start": seg["start"],
+                "end": seg["end"],
+                "lines": line_layouts,
+                "total_height": total_height,
+                "max_line_width": max(l["width"] for l in line_layouts) if line_layouts else 0
+            })
 
         def make_frame(t):
             frame_array = clip.get_frame(t)
             img = Image.fromarray(frame_array).convert("RGBA")
-            
+
             subtitle_overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
             overlay_draw = ImageDraw.Draw(subtitle_overlay)
 
-            # Precompute fixed height using "Amy" with active font
-            amy_bbox = overlay_draw.textbbox((0, 0), "Amy", font=active_font)
-            amy_fixed_height = amy_bbox[3] - amy_bbox[1]
-
-
-            for seg in transcript:
+            for seg in processed_segments:
                 if seg["start"] <= t <= seg["end"]:
-                    wrapped_lines_data = []
-                    current_line_words_data = []
-                    current_line_width = 0
+                    total_text_height = seg["total_height"]
+                    max_line_width = seg["max_line_width"]
 
-                    try:
-                        bbox_test = overlay_draw.textbbox((0, 0), "Tg", font=normal_font)
-                        line_height_estimate = bbox_test[3] - bbox_test[1]
-                        line_height_estimate = max(font_size * 1.2, line_height_estimate + 5)
-                    except Exception:
-                        line_height_estimate = font_size * 1.2
-
-                    for word_data in seg["words"]:
-                        word_text = apply_case(word_data["word"], word_case)
-                        is_active_word = (word_data["start"] <= t <= word_data["end"])
-                        
-                        word_font = active_font if is_active_word else normal_font
-                        word_width = overlay_draw.textlength(word_text, font=word_font)
-                        space_width = overlay_draw.textlength(" ", font=normal_font) if current_line_width else 0
-
-                        if current_line_width and (current_line_width + space_width + word_width > max_subtitle_width_pixels):
-                            wrapped_lines_data.append(current_line_words_data)
-                            current_line_words_data = [word_data]
-                            current_line_width = word_width
-                        else:
-                            if current_line_width:
-                                current_line_width += space_width
-                            
-                            current_line_words_data.append(word_data)
-                            current_line_width += word_width
-
-                    if current_line_words_data:
-                        wrapped_lines_data.append(current_line_words_data)
-                        
-                    actual_block_width = 0
-                    for line_words_data in wrapped_lines_data:
-                        line_width_actual = 0
-                        for word_data in line_words_data:
-                            word_text = apply_case(word_data["word"], word_case)
-                            is_active_word = (word_data["start"] <= t <= word_data["end"])
-                            word_font = active_font if is_active_word else normal_font
-                            line_width_actual += overlay_draw.textlength(word_text, font=word_font)
-                            line_width_actual += overlay_draw.textlength(" ", font=normal_font)
-                        
-                        line_width_actual -= overlay_draw.textlength(" ", font=normal_font)
-                        
-                        if line_width_actual > actual_block_width:
-                            actual_block_width = line_width_actual
-                    
-                    total_text_height = len(wrapped_lines_data) * line_height_estimate
-                    
-                    x_pos_block_start = (width // 2 + x_offset) - (actual_block_width // 2)
-                    
-                    # Calculate y_pos_block_start based on percentage
+                    x_pos_block_start = (width // 2 + x_offset) - (max_line_width // 2)
                     y_pos_pixels = height - int(height * (y_position_percent / 100.0))
                     y_pos_block_start = y_pos_pixels - (total_text_height // 2)
 
                     bg_rect_left = x_pos_block_start - padding
-                    bg_rect_right = x_pos_block_start + actual_block_width + padding
-                    bg_rect_top = y_pos_block_start - (0.5*padding)
-                    bg_rect_bottom = y_pos_block_start + total_text_height + (1.5*padding)
+                    bg_rect_right = x_pos_block_start + max_line_width + padding
+                    bg_rect_top = y_pos_block_start - (0.5 * padding)
+                    bg_rect_bottom = y_pos_block_start + total_text_height + (1.5 * padding)
 
-                    bg_rect_left = max(0, bg_rect_left)
-                    bg_rect_top = max(0, bg_rect_top)
-                    bg_rect_right = min(width, bg_rect_right)
-                    bg_rect_bottom = min(height, bg_rect_bottom)
-                    
                     if bg_opacity > 0:
-                        draw_rounded_rectangle(
-                            overlay_draw,
-                            (bg_rect_left, bg_rect_top, bg_rect_right, bg_rect_bottom),
-                            bg_border_radius,
-                            fill=background_rgba
-                        )
+                        draw_rounded_rectangle(overlay_draw, (bg_rect_left, bg_rect_top, bg_rect_right, bg_rect_bottom), bg_border_radius, fill=background_rgba)
 
                     current_line_y = y_pos_block_start + padding
-                    
-                    for line_words_data in wrapped_lines_data:
-                        line_width_for_centering = 0
-                        for word_data in line_words_data:
-                            word_text = apply_case(word_data["word"], word_case)
+
+                    for line in seg["lines"]:
+                        current_word_x = (width // 2 + x_offset) - (line["width"] // 2)
+
+                        for word_layout in line["words"]:
+                            word_data = word_layout["word"]
+                            rendered_word_text = word_layout["text"].strip()
                             is_active_word = (word_data["start"] <= t <= word_data["end"])
-                            word_font = active_font if is_active_word else normal_font
-                            line_width_for_centering += overlay_draw.textlength(word_text + " ", font=word_font)
-                        line_width_for_centering -= overlay_draw.textlength(" ", font=normal_font)
-                        
-                        current_word_x = (width // 2 + x_offset) - (line_width_for_centering // 2)
-                        
-                        for word_data_original in line_words_data:
-                            word_text = word_data_original["word"]
-                            is_active_word = (word_data_original["start"] <= t <= word_data_original["end"])
 
-                            rendered_word_text = apply_case(word_text.strip(), word_case)
-                            
-                            word_font = active_font if is_active_word else normal_font
-                            
-                            fill_color = active_text_rgba if is_active_word else normal_text_rgba
-                            border_color = active_border_rgba if is_active_word else normal_border_rgba
-                            border_thickness = active_border_thickness if is_active_word else normal_border_thickness
+                            # Conditional rendering based on disable_active_style
+                            if is_active_word and not disable_active_style:
+                                word_font = active_font
+                                fill_color = active_text_rgba
+                                border_color = active_border_rgba
+                                border_thickness = active_border_thickness
+                                if active_word_bg_opacity > 0:
+                                    word_bbox = overlay_draw.textbbox((current_word_x, current_line_y), rendered_word_text, font=word_font)
+                                    space_width = (overlay_draw.textlength(" ", font=word_font)) * 0.5
+                                    bg_top = word_bbox[1] - space_width
+                                    bg_bottom = word_bbox[3] + space_width
+                                    bg_left = word_bbox[0] - space_width
+                                    bg_right = word_bbox[2] + space_width
+                                    draw_rounded_rectangle(overlay_draw, (bg_left, bg_top, bg_right, bg_bottom), active_word_bg_border_radius, fill=active_word_bg_rgba)
+                            else:
+                                word_font = normal_font
+                                fill_color = normal_text_rgba
+                                border_color = normal_border_rgba
+                                border_thickness = normal_border_thickness
 
-                            if is_active_word and active_word_bg_opacity > 0:
-                                word_bbox = overlay_draw.textbbox((current_word_x, current_line_y), rendered_word_text, font=word_font)
 
-                                space_width = (overlay_draw.textlength(" ", font=active_font))*0.5
-                                total_bg_height = amy_fixed_height
-
-                                bg_top = current_line_y
-                                bg_bottom = current_line_y + (total_bg_height * 1.2)
-                                bg_left = word_bbox[0] - space_width
-                                bg_right = word_bbox[2] + space_width
-                                
-                                draw_rounded_rectangle(
-                                    overlay_draw,
-                                    (bg_left, bg_top, bg_right, bg_bottom),
-                                    active_word_bg_border_radius,
-                                    fill=active_word_bg_rgba
-                                )
-
-                            
                             if border_thickness > 0:
                                 for x_offset_outline in range(-border_thickness, border_thickness + 1):
                                     for y_offset_outline in range(-border_thickness, border_thickness + 1):
                                         if x_offset_outline != 0 or y_offset_outline != 0:
-                                            overlay_draw.text(
-                                                (current_word_x + x_offset_outline, current_line_y + y_offset_outline),
-                                                rendered_word_text,
-                                                font=word_font,
-                                                fill=border_color
-                                            )
-                            
-                            overlay_draw.text(
-                                (current_word_x, current_line_y),
-                                rendered_word_text,
-                                font=word_font,
-                                fill=fill_color
-                            )
+                                            overlay_draw.text((current_word_x + x_offset_outline, current_line_y + y_offset_outline), rendered_word_text, font=word_font, fill=border_color)
 
+                            overlay_draw.text((current_word_x, current_line_y), rendered_word_text, font=word_font, fill=fill_color)
                             current_word_x += overlay_draw.textlength(rendered_word_text + " ", font=word_font)
 
                         current_line_y += line_height_estimate
 
                     img = Image.alpha_composite(img, subtitle_overlay)
                     break
-            
-            # The crucial change: convert the final image back to RGB to remove the alpha channel
+
+            # Convert the final image back to RGB for moviepy
             return np.array(img.convert("RGB"))
 
         final_video_clip = VideoClip(make_frame, duration=clip.duration)
