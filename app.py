@@ -14,6 +14,11 @@ from srt_tools import to_srt, from_srt
 # --------------------- CONFIG ---------------------
 st.set_page_config(layout="wide")
 st.title("🎬 AI Subtitle Generator")
+st.markdown("""
+> ⚠️ **NOTE:** Recommended to install locally even without a GPU – it works faster and reliable.  
+> 📹 [Watch local install guide](https://youtu.be/CH0YDqiCuoA)
+""")
+
 models_dir = "models"
 os.makedirs(models_dir, exist_ok=True)
 
